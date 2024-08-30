@@ -1,0 +1,34 @@
+#pragma kernel GenerateTerrain
+#include "/Includes/FastNoiseLite.hlsl"
+
+RWStructuredBuffer<float> weights;
+uint ChunkWidth;
+uint ChunkHeight;
+float NoiseScale;
+float Amplitude;
+float Frequency;
+int Octaves;
+float GroundPercent;
+int ChunkPosX;
+int ChunkPosY;
+int ChunkPosZ;
+
+int indexById(uint3 id){
+	return (id.x + ChunkWidth *  id.z) + id.y * ChunkWidth * ChunkWidth;
+}
+
+[numthreads(8,8,8)]
+void GenerateTerrain (uint3 id : SV_DispatchThreadID)
+{
+	fnl_state noise = fnlCreateState();
+	noise.noise_type = FNL_NOISE_OPENSIMPLEX2;
+	noise.fractal_type = FNL_FRACTAL_RIDGED;
+	noise.frequency = Frequency;
+	noise.octaves = Octaves;
+
+	float3 noisePos =(float3(ChunkPosX, ChunkPosY, ChunkPosZ) + float3( id.x, id.y, id.z)) * NoiseScale;
+	float groundLevel = -noisePos.y + (GroundPercent * ChunkWidth);
+	float noiseValue = groundLevel + fnlGetNoise3D(noise, noisePos.x, noisePos.y, noisePos.z) * Amplitude;
+
+	weights[indexById(id)] = noiseValue;
+}

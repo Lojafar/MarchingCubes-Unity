@@ -1,0 +1,83 @@
+#pragma kernel March
+#include "/Includes/MarchTables.txt"
+
+struct Triangle{
+	float3 vertex1;
+	float3 vertex2;
+	float3 vertex3;
+
+	float2 uv1;
+	float2 uv2;
+	float2 uv3;
+};
+float IsoLevel;
+uint ChunkWidth;
+uint ChunkHeight;
+AppendStructuredBuffer<Triangle> triangles;
+RWStructuredBuffer<float> weights;
+
+float3 InterpolateVertice(float3 vertex1, float vertexWeight1, float3 vertex2, float vertexWeight2)
+{
+	return (vertex1 + (IsoLevel - vertexWeight1) * (vertex2 - vertex1) / (vertexWeight2 - vertexWeight1));
+}
+
+int GetCubeConfig(float cornersWeight[8])
+{
+	int config = 0;
+	for(uint i = 0; i < CornersTable.Length; i++)
+    {
+		if (cornersWeight[i] < IsoLevel) config |= 1 << i;
+    }
+	return config;
+}
+
+[numthreads(8,8,8)]
+void March (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= ChunkWidth   || id.y >= ChunkHeight || id.z >= ChunkWidth )
+	{
+        return;
+    }
+	
+	float cornersWeight[8];
+	for(uint i =0; i < cornersWeight.Length; i++){
+		int3 cornerPos =  id + CornersTable[i];
+		uint cornerPosAtArray =  cornerPos.x + (cornerPos.y * (ChunkWidth * ChunkWidth + ChunkWidth * 2 + 1)) + (cornerPos.z ) *(ChunkWidth + 1);
+		if(cornerPosAtArray < ChunkWidth * ChunkWidth * ChunkHeight + (ChunkHeight *(2 * ChunkWidth + 1)))
+		{
+			cornersWeight[i] = weights[cornerPosAtArray];
+	    }
+	    else
+		{
+			cornersWeight[i] = 0;
+	    }
+	}
+	int cubeConfig = GetCubeConfig(cornersWeight);
+
+	for(uint t = 0; TrianglesTable[cubeConfig][t] != -1; t += 3)
+        {
+			int e1 = EdgesTable[TrianglesTable[cubeConfig][t]][0];
+			int e2 = EdgesTable[TrianglesTable[cubeConfig][t]][1];
+
+			int e3 = EdgesTable[TrianglesTable[cubeConfig][t + 1]][0];
+			int e4 = EdgesTable[TrianglesTable[cubeConfig][t + 1]][1];
+
+			int e5 = EdgesTable[TrianglesTable[cubeConfig][t + 2]][0];
+			int e6 = EdgesTable[TrianglesTable[cubeConfig][t + 2]][1];
+
+			float3 v1 = InterpolateVertice(CornersTable[e1], cornersWeight[e1], CornersTable[e2], cornersWeight[e2]) + id;
+			float3 v2 = InterpolateVertice(CornersTable[e3], cornersWeight[e3], CornersTable[e4], cornersWeight[e4]) + id;
+			float3 v3 = InterpolateVertice(CornersTable[e5], cornersWeight[e5], CornersTable[e6], cornersWeight[e6]) + id;
+			
+			Triangle _triangle;
+			_triangle.vertex1 = v1;
+			_triangle.vertex2 = v2;
+			_triangle.vertex3 = v3;
+
+			_triangle.uv1 = float2(0,0);
+			_triangle.uv2 = float2(1,0);
+			_triangle.uv3 = float2(1,1);
+
+			 triangles.Append(_triangle);
+		}
+}
